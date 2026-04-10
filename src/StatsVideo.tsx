@@ -435,77 +435,88 @@ const OutroScene: React.FC = () => {
         overflow: "hidden",
       }}
     >
-      {/* Multi-color glow dots */}
-      {colors.map((color, i) => (
-        <div
-          key={i}
-          style={{
-            position: "absolute",
-            width: 300,
-            height: 300,
-            borderRadius: "50%",
-            backgroundColor: color,
-            opacity: 0.06,
-            filter: "blur(60px)",
-            left: `${18 + i * 20}%`,
-            top: "40%",
-            transform: "translateY(-50%)",
-          }}
-        />
-      ))}
-
-      {/* 4-color gradient line */}
+      {/* White radial glow */}
       <div
         style={{
-          width: `${lineW * 700}px`,
-          height: 3,
-          background: `linear-gradient(90deg, ${colors[0]}, ${colors[1]}, ${colors[2]}, ${colors[3]})`,
-          marginBottom: 44,
-          borderRadius: 2,
-          boxShadow: `0 0 30px #ffffff22`,
+          position: "absolute",
+          inset: 0,
+          background: "radial-gradient(ellipse 60% 50% at 50% 50%, #ffffff0d 0%, transparent 70%)",
         }}
       />
 
+      {/* White accent line — top */}
+      <div
+        style={{
+          width: `${lineW * 700}px`,
+          height: 2,
+          background: "linear-gradient(90deg, transparent, #FFFFFF, transparent)",
+          marginBottom: 48,
+          borderRadius: 2,
+          boxShadow: "0 0 24px #ffffff55",
+        }}
+      />
+
+      {/* Main headline */}
       <div
         style={{
           opacity: textOp,
-          fontSize: 56,
+          fontSize: 72,
           fontWeight: 700,
           fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif",
           color: "#FFFFFF",
-          letterSpacing: "-0.01em",
+          letterSpacing: "-0.02em",
           textAlign: "center",
-          marginBottom: 20,
+          marginBottom: 16,
+          textShadow: "0 0 60px #ffffff66",
         }}
       >
         Results That Speak
       </div>
 
+      {/* Sub-line */}
       <div
         style={{
           opacity: textOp,
           transform: `translateY(${subY}px)`,
-          fontSize: 22,
+          fontSize: 28,
           fontWeight: 300,
           fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif",
-          color: "#555",
-          letterSpacing: "0.1em",
+          color: "#FFFFFF",
+          letterSpacing: "0.18em",
           textAlign: "center",
-          marginBottom: 44,
+          marginBottom: 48,
+          textTransform: "uppercase",
         }}
       >
         for themselves.
       </div>
 
-      {/* 4-color gradient line bottom */}
+      {/* White accent line — bottom */}
       <div
         style={{
           width: `${lineW * 700}px`,
-          height: 3,
-          background: `linear-gradient(90deg, ${colors[3]}, ${colors[2]}, ${colors[1]}, ${colors[0]})`,
+          height: 2,
+          background: "linear-gradient(90deg, transparent, #FFFFFF, transparent)",
           borderRadius: 2,
+          boxShadow: "0 0 24px #ffffff55",
+          marginBottom: 36,
         }}
       />
+
+      {/* Jeff Designs brand mark */}
+      <div
+        style={{
+          opacity: textOp * 0.55,
+          fontSize: 13,
+          letterSpacing: "0.55em",
+          color: "#FFFFFF",
+          fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif",
+          fontWeight: 400,
+          textTransform: "uppercase",
+        }}
+      >
+        Jeff Designs
+      </div>
     </AbsoluteFill>
   );
 };
