@@ -21,46 +21,50 @@ const FFMPEG    = '/tmp/ffmpeg_bin/ffmpeg';
 const EDGE_TTS  = `python3 -m edge_tts`;
 const OUT       = path.join(__dirname, '../out');
 const TMP       = path.join(OUT, '_narration_tmp');
-const TOTAL     = 20; // seconds
+const TOTAL     = 25; // seconds
 
 fs.mkdirSync(TMP, { recursive: true });
 
 // ── Voice config ─────────────────────────────────────────────
 const VOICE = 'en-US-AriaNeural';
-const RATE  = '-8%';   // slightly slower than default → clear, deliberate
+const RATE  = '-10%';  // warm, deliberate broadcast pace
 const PITCH = '+0Hz';  // natural pitch
 
-// ── Narration script (timed to animation keyframes) ──────────
+// ── Narration script (timed to 25s animation keyframes) ──────
+// Stat scenes: 0–5.5s | 5.5–11s | 10.7–16.2s | 15.8–21.3s
+// Outro scene: 20–25s  (150 frames = 5s — full space for final line)
 const LINES = [
   {
     id:       'intro',
     text:     "Here are the numbers that define our impact.",
-    startSec: 0.15,
+    startSec: 0.2,
   },
   {
     id:       'stat1',
     text:     "A 47 percent increase in conversion rate.",
-    startSec: 2.0,
+    startSec: 2.2,
   },
   {
     id:       'stat2',
     text:     "2.3 times return on ad spend.",
-    startSec: 6.8,
+    startSec: 7.8,
   },
   {
     id:       'stat3',
     text:     "More than 150 clients served worldwide.",
-    startSec: 11.5,
+    startSec: 13.2,
   },
   {
     id:       'stat4',
     text:     "1.2 million dollars in revenue generated.",
-    startSec: 16.0,
+    startSec: 18.5,
   },
   {
+    // Starts at 20.3s · outro scene starts at frame 600 = 20s
+    // "Results. That speak for themselves." ≈ 4.5s → finishes ~24.8s ✓
     id:       'outro',
     text:     "Results. That speak for themselves.",
-    startSec: 19.1,
+    startSec: 20.3,
   },
 ];
 

@@ -53,9 +53,9 @@ const STATS = [
   },
 ];
 
-// 20s = 600 frames. Each stat: 150 frames (5s)
-const SCENE_DURATION = 150;
-const OVERLAP = 20; // cross-fade overlap
+// 25s = 750 frames. Each stat: 165 frames (5.5s)
+const SCENE_DURATION = 165;
+const OVERLAP = 22; // cross-fade overlap
 
 // ── Easing ────────────────────────────────────────────────────
 const easeOutQuart = (t: number) => 1 - Math.pow(1 - t, 4);
@@ -396,32 +396,39 @@ const IntroScene: React.FC = () => {
   );
 };
 
-// ── Outro Scene (570–600) ─────────────────────────────────────
+// ── Outro Scene (600–750 · 5s) ────────────────────────────────
 const OutroScene: React.FC = () => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
 
-  const op = interpolate(frame, [0, 22], [0, 1], {
+  // Fade the whole scene in over 24 frames
+  const op = interpolate(frame, [0, 24], [0, 1], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
   });
 
-  // All 4 accent colors fan out
-  const colors = STATS.map((s) => s.color);
-
-  const lineW = interpolate(frame, [8, 35], [0, 1], {
+  // White rule sweep
+  const lineW = interpolate(frame, [10, 42], [0, 1], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
     easing: easeOutExpo,
   });
 
-  const textOp = interpolate(frame, [28, 48], [0, 1], {
+  // Headline fades in
+  const textOp = interpolate(frame, [32, 55], [0, 1], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
   });
 
-  const subSpring = spring({ frame, fps, config: { stiffness: 120, damping: 18 }, delay: 40 });
+  // "for themselves." rises up after headline
+  const subSpring = spring({ frame, fps, config: { stiffness: 120, damping: 18 }, delay: 52 });
   const subY = interpolate(subSpring, [0, 1], [20, 0]);
+
+  // Brand mark fades in last
+  const brandOp = interpolate(frame, [80, 108], [0, 1], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  });
 
   return (
     <AbsoluteFill
@@ -506,7 +513,7 @@ const OutroScene: React.FC = () => {
       {/* Jeff Designs brand mark */}
       <div
         style={{
-          opacity: textOp * 0.55,
+          opacity: brandOp,
           fontSize: 13,
           letterSpacing: "0.55em",
           color: "#FFFFFF",
@@ -522,20 +529,20 @@ const OutroScene: React.FC = () => {
 };
 
 // ── Root ──────────────────────────────────────────────────────
-// 20s = 600 frames @ 30fps
+// 25s = 750 frames @ 30fps
 // Layout:
-//   0–30   Intro flash
-//   10–160  Stat 1 (blue)
-//   150–300 Stat 2 (green)
-//   290–440 Stat 3 (purple)
-//   430–580 Stat 4 (orange)
-//   570–600 Outro
+//   0–35    Intro flash
+//   10–175  Stat 1  · blue    (165f = 5.5s)
+//   165–330 Stat 2  · green   (165f = 5.5s)
+//   320–485 Stat 3  · purple  (165f = 5.5s)
+//   475–640 Stat 4  · orange  (165f = 5.5s)
+//   600–750 Outro   · white   (150f = 5.0s) ← long enough for full narration
 export const StatsVideo: React.FC = () => {
-  const offsets = [10, 150, 290, 430];
+  const offsets = [10, 165, 320, 475];
 
   return (
     <AbsoluteFill style={{ backgroundColor: BG }}>
-      <Sequence from={0} durationInFrames={32}>
+      <Sequence from={0} durationInFrames={35}>
         <IntroScene />
       </Sequence>
 
@@ -545,7 +552,8 @@ export const StatsVideo: React.FC = () => {
         </Sequence>
       ))}
 
-      <Sequence from={570} durationInFrames={30}>
+      {/* 5 full seconds so "Results. That speak for themselves." completes */}
+      <Sequence from={600} durationInFrames={150}>
         <OutroScene />
       </Sequence>
     </AbsoluteFill>

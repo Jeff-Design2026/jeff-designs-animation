@@ -1,12 +1,12 @@
 /**
- * Ambient music generator — produces a soothing 20-second WAV
+ * Ambient music generator — produces a soothing 25-second WAV
  * No dependencies; pure Node.js Buffer / math synthesis.
  *
- * Chord progression (5s each):
- *   0–5s   Fmaj7   (F A C E)
- *   5–10s  Am7     (A C E G)
- *   10–15s Dm9     (D F A C E)
- *   15–20s Cmaj9   (C E G B D)
+ * Chord progression (6.25s each):
+ *   0–6.25s    Fmaj7   (F A C E)
+ *   6.25–12.5s Am7     (A C E G)
+ *   12.5–18.75s Dm9    (D F A C E)
+ *   18.75–25s  Cmaj9   (C E G B D)
  *
  * Each chord layer:
  *   • 3 slightly detuned oscillators per note (chorus effect)
@@ -20,7 +20,7 @@ const fs   = require('fs');
 const path = require('path');
 
 const SAMPLE_RATE = 44100;
-const DURATION    = 20;
+const DURATION    = 25;
 const N           = SAMPLE_RATE * DURATION;
 
 // ── Musical helpers ──────────────────────────────────────────
@@ -80,7 +80,7 @@ function smoothStep(a, b, t) {
 console.log('Synthesising ambient music…');
 const buf = new Float32Array(N);
 
-const CHORD_DUR = 5; // seconds per chord
+const CHORD_DUR = 6.25; // seconds per chord (25s ÷ 4 chords)
 const XFADE    = 0.8; // cross-fade overlap (seconds)
 
 for (let i = 0; i < N; i++) {
@@ -132,7 +132,7 @@ for (let i = 0; i < N; i++) {
 
   // Global fade in / fade out
   const fadeIn  = smoothStep(0,  3,  t);
-  const fadeOut = smoothStep(20, 17, t);
+  const fadeOut = smoothStep(25, 22, t);
 
   // Soft clip + store
   buf[i] = Math.tanh(samp * breath * fadeIn * fadeOut * 1.4);
