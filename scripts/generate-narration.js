@@ -1,156 +1,186 @@
 /**
  * generate-narration.js
  *
- * 1. Uses macOS `say` to synthesise each narration line as AIFF
- * 2. Converts each AIFF → WAV (44100 Hz mono) with ffmpeg
- * 3. Positions every clip at the correct timestamp with `adelay`
- * 4. Mixes all narration clips into one 20-second narration track
- * 5. Applies sidechain-style ducking: music drops to 18% under speech,
- *    recovers smoothly between lines
- * 6. Merges narration + ducked music → final mixed audio WAV
- * 7. Final combined step is done in the render script
+ * AI-quality female narration pipeline using Microsoft Edge Neural TTS
+ * (en-US-AriaNeural — confident, broadcast-quality, no API key required)
+ *
+ * Steps:
+ *   1. edge-tts → .mp3 per line
+ *   2. ffmpeg: mp3 → 44100 Hz stereo WAV + normalise each clip
+ *   3. Position every clip at its timestamp with adelay
+ *   4. amix all clips into one 20-second narration track
+ *   5. Sidechain-compress music under voice (80ms/600ms duck)
+ *   6. Mix narration (2.4×) + ducked music → final-audio.wav
  */
 
 const { execSync } = require('child_process');
 const fs   = require('fs');
 const path = require('path');
 
-const FFMPEG = '/tmp/ffmpeg_bin/ffmpeg';
-const OUT    = path.join(__dirname, '../out');
-const TMP    = path.join(OUT, '_narration_tmp');
+const FFMPEG    = '/tmp/ffmpeg_bin/ffmpeg';
+const EDGE_TTS  = `python3 -m edge_tts`;
+const OUT       = path.join(__dirname, '../out');
+const TMP       = path.join(OUT, '_narration_tmp');
+const TOTAL     = 20; // seconds
 
-fs.mkdirSync(OUT, { recursive: true });
 fs.mkdirSync(TMP, { recursive: true });
 
-// ── Narration script ─────────────────────────────────────────
-// startSec = when narration begins (matched to animation timing)
+// ── Voice config ─────────────────────────────────────────────
+const VOICE = 'en-US-AriaNeural';
+const RATE  = '-8%';   // slightly slower than default → clear, deliberate
+const PITCH = '+0Hz';  // natural pitch
+
+// ── Narration script (timed to animation keyframes) ──────────
 const LINES = [
-  { id: 'intro',  text: "Here are the numbers that matter.",            startSec: 0.2  },
-  { id: 'stat1',  text: "47 percent increase in conversion rate.",      startSec: 1.8  },
-  { id: 'stat2',  text: "2.3 times return on ad spend.",                startSec: 6.5  },
-  { id: 'stat3',  text: "Over 150 clients served worldwide.",           startSec: 11.2 },
-  { id: 'stat4',  text: "1.2 million dollars in revenue generated.",    startSec: 15.8 },
-  { id: 'outro',  text: "Results that speak for themselves. Jeff Designs.", startSec: 19.0 },
+  {
+    id:       'intro',
+    text:     "Here are the numbers that define our impact.",
+    startSec: 0.15,
+  },
+  {
+    id:       'stat1',
+    text:     "A 47 percent increase in conversion rate.",
+    startSec: 2.0,
+  },
+  {
+    id:       'stat2',
+    text:     "2.3 times return on ad spend.",
+    startSec: 6.8,
+  },
+  {
+    id:       'stat3',
+    text:     "More than 150 clients served worldwide.",
+    startSec: 11.5,
+  },
+  {
+    id:       'stat4',
+    text:     "1.2 million dollars in revenue generated.",
+    startSec: 16.0,
+  },
+  {
+    id:       'outro',
+    text:     "Results. That speak for themselves.",
+    startSec: 19.1,
+  },
 ];
 
-const VOICE = 'Samantha';
-const RATE  = 162;   // words per minute — natural broadcast pace
-const TOTAL = 20;    // seconds
-
-// ── Step 1: synthesise each line ─────────────────────────────
-console.log('\n🎙  Synthesising narration lines…');
-for (const line of LINES) {
-  const aiff = path.join(TMP, `${line.id}.aiff`);
-  const wav  = path.join(TMP, `${line.id}.wav`);
-
-  // macOS say → AIFF
-  execSync(`say -v ${VOICE} --rate=${RATE} "${line.text}" -o "${aiff}"`, { stdio: 'inherit' });
-
-  // Convert to 44100 mono WAV (ffmpeg static build)
-  execSync(
-    `${FFMPEG} -y -i "${aiff}" -ar 44100 -ac 1 "${wav}" 2>/dev/null`,
-    { stdio: 'pipe' }
-  );
-
-  // Measure duration
-  const raw = execSync(
-    `${FFMPEG} -i "${wav}" 2>&1 | grep Duration`,
-    { encoding: 'utf8' }
-  );
-  const match = raw.match(/Duration:\s*(\d+):(\d+):(\d+\.\d+)/);
-  if (match) {
-    const dur = parseInt(match[1]) * 3600 + parseInt(match[2]) * 60 + parseFloat(match[3]);
-    line.durationSec = dur;
-  }
-  console.log(`  ✓ ${line.id}: "${line.text.slice(0, 40)}…" → ${line.durationSec?.toFixed(2)}s`);
+// ── Helper: run shell command silently ───────────────────────
+function run(cmd) {
+  return execSync(cmd, { stdio: 'pipe', encoding: 'utf8' });
 }
 
-// ── Step 2: build narration mix (silence + each clip at offset) ──
-console.log('\n🔀  Building narration track…');
+function getAudioDuration(file) {
+  const out = run(`${FFMPEG} -i "${file}" 2>&1 || true`);
+  const m   = out.match(/Duration:\s*(\d+):(\d+):(\d+\.\d+)/);
+  if (!m) return null;
+  return parseInt(m[1]) * 3600 + parseInt(m[2]) * 60 + parseFloat(m[3]);
+}
 
-// We'll use a complex filter: generate 20s silence, then mix each line at its offset
-const silenceInput = `-f lavfi -i "anullsrc=r=44100:cl=mono" -t ${TOTAL}`;
-
-let filterParts   = [];
-let inputArgs     = [silenceInput];
-let inputCount    = 1; // 0 = silence
+// ── Step 1: synthesise each line via Edge Neural TTS ─────────
+console.log('\n🎙  Synthesising with Microsoft Aria Neural…\n');
 
 for (const line of LINES) {
+  const mp3 = path.join(TMP, `${line.id}.mp3`);
   const wav = path.join(TMP, `${line.id}.wav`);
-  inputArgs.push(`-i "${wav}"`);
-  const idx   = inputCount++;
-  const delayMs = Math.round(line.startSec * 1000);
-  filterParts.push(`[${idx}]adelay=${delayMs}|${delayMs}[d${idx}]`);
+
+  // Generate MP3 via edge-tts
+  run(
+    `${EDGE_TTS} ` +
+    `--voice "${VOICE}" ` +
+    `--rate="${RATE}" ` +
+    `--pitch="${PITCH}" ` +
+    `--text "${line.text}" ` +
+    `--write-media "${mp3}"`
+  );
+
+  // Convert MP3 → 44100 stereo WAV + loudnorm pass for consistent volume
+  run(
+    `${FFMPEG} -y -i "${mp3}" ` +
+    `-ar 44100 -ac 2 ` +
+    `-af "loudnorm=I=-16:LRA=6:TP=-1.5" ` +
+    `"${wav}" 2>/dev/null`
+  );
+
+  line.durationSec = getAudioDuration(wav) ?? 3.0;
+  console.log(
+    `  ✓ ${line.id.padEnd(6)}  ${line.durationSec.toFixed(2).padStart(5)}s` +
+    `  starts @ ${line.startSec.toFixed(2)}s  — "${line.text.slice(0, 48)}"`
+  );
 }
 
-// amix all delayed clips + silence
-const mixInputs = ['[0]', ...LINES.map((_, i) => `[d${i + 1}]`)].join('');
-const mixCount  = LINES.length + 1;
-filterParts.push(`${mixInputs}amix=inputs=${mixCount}:duration=first:normalize=0[narr]`);
+// ── Step 2: build narration track ────────────────────────────
+console.log('\n🔀  Positioning clips on timeline…');
 
-const narrationWav = path.join(OUT, 'narration.wav');
-const narrationCmd = [
+const silenceArg = `-f lavfi -i "anullsrc=r=44100:cl=stereo" -t ${TOTAL}`;
+const inputArgs  = [silenceArg];
+const filterParts = [];
+let   idx = 1;
+
+for (const line of LINES) {
+  const wav     = path.join(TMP, `${line.id}.wav`);
+  const delayMs = Math.round(line.startSec * 1000);
+  inputArgs.push(`-i "${wav}"`);
+  filterParts.push(`[${idx}]adelay=${delayMs}|${delayMs}[d${idx}]`);
+  idx++;
+}
+
+const mixSrcs  = ['[0]', ...LINES.map((_, i) => `[d${i + 1}]`)].join('');
+filterParts.push(
+  `${mixSrcs}amix=inputs=${LINES.length + 1}:duration=first:normalize=0[narr]`
+);
+
+const narrWav = path.join(OUT, 'narration.wav');
+run([
   FFMPEG, '-y',
   ...inputArgs,
   `-filter_complex "${filterParts.join('; ')}"`,
   `-map "[narr]"`,
   `-t ${TOTAL}`,
-  `"${narrationWav}"`
-].join(' ');
+  `"${narrWav}"`,
+].join(' '));
+console.log(`  ✓ Narration track → ${narrWav}`);
 
-execSync(narrationCmd, { stdio: 'pipe' });
-console.log(`  ✓ Narration track: ${narrationWav}`);
+// ── Step 3: sidechain-duck the background music ───────────────
+console.log('\n🎚  Sidechain ducking music under voice…');
 
-// ── Step 3: duck music under narration ───────────────────────
-console.log('\n🎚  Applying music ducking under narration…');
+const musicWav  = path.join(OUT, 'background-music.wav');
+const duckedWav = path.join(OUT, 'ducked-music.wav');
 
-const musicWav   = path.join(OUT, 'background-music.wav');
-const duckedWav  = path.join(OUT, 'ducked-music.wav');
-
-// Build duck filter:
-//   - detect narration loudness with a slow-attack compressor-style approach
-//   - use `sidechaincompress` to reduce music when narration is present
-// Since sidechaincompress needs both streams, we re-input narration as sidechain.
-//
-// Duck: when narration RMS > -40dB → music drops to ~18%
-//        attack=80ms, release=600ms for smooth transitions
-
-const duckCmd = [
+// sidechaincompress: when narration exceeds threshold, drop music to ~20%
+// attack=60ms / release=700ms → smooth natural-feeling duck
+run([
   FFMPEG, '-y',
   `-i "${musicWav}"`,
-  `-i "${narrationWav}"`,
+  `-i "${narrWav}"`,
   `-filter_complex "`,
   `  [1:a]apad,volume=1[sc];`,
   `  [0:a][sc]sidechaincompress=`,
-  `    threshold=0.015:ratio=6:attack=80:release=600:`,
-  `    makeup=1.0:knee=6[ducked]`,
+  `    threshold=0.012:ratio=7:attack=60:release=700:makeup=1.0:knee=8[ducked]`,
   `"`,
   `-map "[ducked]"`,
   `-t ${TOTAL}`,
-  `"${duckedWav}"`
-].join(' ');
+  `"${duckedWav}"`,
+].join(' '));
+console.log(`  ✓ Ducked music → ${duckedWav}`);
 
-execSync(duckCmd, { stdio: 'pipe' });
-console.log(`  ✓ Ducked music: ${duckedWav}`);
-
-// ── Step 4: mix narration + ducked music ─────────────────────
-console.log('\n🎛  Mixing narration + music into final audio…');
+// ── Step 4: final mix — voice (2.4×) + ducked music ──────────
+console.log('\n🎛  Final mix: voice + music…');
 
 const finalAudio = path.join(OUT, 'final-audio.wav');
-const mixCmd = [
+run([
   FFMPEG, '-y',
   `-i "${duckedWav}"`,
-  `-i "${narrationWav}"`,
+  `-i "${narrWav}"`,
   `-filter_complex "`,
   `  [0:a]volume=1.0[music];`,
-  `  [1:a]volume=2.2[voice];`,
-  `  [music][voice]amix=inputs=2:duration=first:normalize=0[out]`,
+  `  [1:a]volume=2.4[voice];`,
+  `  [music][voice]amix=inputs=2:duration=first:normalize=0,`,
+  `  loudnorm=I=-14:LRA=7:TP=-1.0[out]`,
   `"`,
   `-map "[out]"`,
   `-t ${TOTAL}`,
-  `"${finalAudio}"`
-].join(' ');
+  `"${finalAudio}"`,
+].join(' '));
 
-execSync(mixCmd, { stdio: 'pipe' });
-console.log(`  ✓ Final audio mix: ${finalAudio}`);
-console.log('\n✅  Narration pipeline complete.\n');
+console.log(`  ✓ Final audio → ${finalAudio}`);
+console.log('\n✅  Audio pipeline complete.\n');
